@@ -18,7 +18,8 @@ export const SocketProvider = ({ children }) => {
     //   auth: { token: user.token },
     //   transports: ['websocket', 'polling'],
     // });
-     socketRef.current = io('http://localhost:8000', {
+     //socketRef.current = io('http://localhost:8000', {
+     socketRef.current = io(process.env.REACT_APP_SERVER_URL || 'http://localhost:8000', {
       auth: { token: user.token },
       transports: ['websocket', 'polling'],
       reconnection: true,

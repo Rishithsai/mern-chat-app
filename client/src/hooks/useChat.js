@@ -17,25 +17,26 @@ export const useChat = (roomId) => {
   const typingTimerRef = useRef(null);
   const isTypingRef = useRef(false);
 
-  // Stable refs so callbacks inside the effect always see latest values
-  const roomIdRef = useRef(roomId);
+  // Keep latest socket functions and user in refs so the main effect
+  // can reference them without needing them in its dependency array.
+  // The effect must only re-run when roomId changes — adding these as
+  // deps would cause repeated join/leave/listener cycles on every render.
   const joinRoomRef = useRef(joinRoom);
   const leaveRoomRef = useRef(leaveRoom);
   const onEventRef = useRef(onEvent);
   const userIdRef = useRef(user?._id);
 
-  useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
   useEffect(() => { joinRoomRef.current = joinRoom; }, [joinRoom]);
   useEffect(() => { leaveRoomRef.current = leaveRoom; }, [leaveRoom]);
   useEffect(() => { onEventRef.current = onEvent; }, [onEvent]);
   useEffect(() => { userIdRef.current = user?._id; }, [user?._id]);
 
   const loadMessages = useCallback(async (pageNum = 1) => {
-    if (!roomIdRef.current) return;
+    if (!roomId) return;
     setLoading(true);
     try {
       const { data } = await axios.get(
-        `/api/rooms/${roomIdRef.current}/messages?page=${pageNum}&limit=30`
+        `/api/rooms/${roomId}/messages?page=${pageNum}&limit=30`
       );
       if (pageNum === 1) {
         setMessages(data.messages);
@@ -48,42 +49,34 @@ export const useChat = (roomId) => {
     } finally {
       setLoading(false);
     }
-  }, []); // stable — reads roomId from ref
+  }, [roomId]);
 
-  const loadMessagesRef = useRef(loadMessages);
-  useEffect(() => { loadMessagesRef.current = loadMessages; }, [loadMessages]);
-
-  // No dependency array — the exhaustive-deps rule only applies when
-  // a dependency array is present. All values are read from refs so
-  // this is safe: it won't re-join/re-leave on unrelated re-renders
-  // because the cleanup + re-run only matters when roomId ref changes.
   useEffect(() => {
-    const currentRoomId = roomIdRef.current;
-    if (!currentRoomId) return;
+    if (!roomId) return;
 
     setMessages([]);
     setPage(1);
     setHasMore(true);
     setTypingUsers([]);
 
-    joinRoomRef.current(currentRoomId);
-    loadMessagesRef.current(1);
+    joinRoomRef.current(roomId);
+    loadMessages(1);
 
     const cleanups = [
       onEventRef.current('message:new', (msg) => {
-        if (msg.room === roomIdRef.current) {
+        if (msg.room === roomId) {
           setMessages((prev) => [...prev, msg]);
         }
       }),
       onEventRef.current('typing:start', ({ roomId: rid, user: typingUser }) => {
-        if (rid === roomIdRef.current && typingUser._id !== userIdRef.current) {
+        if (rid === roomId && typingUser._id !== userIdRef.current) {
           setTypingUsers((prev) =>
             prev.find((u) => u._id === typingUser._id) ? prev : [...prev, typingUser]
           );
         }
       }),
       onEventRef.current('typing:stop', ({ roomId: rid, userId }) => {
-        if (rid === roomIdRef.current) {
+        if (rid === roomId) {
           setTypingUsers((prev) => prev.filter((u) => u._id !== userId));
         }
       }),
@@ -103,32 +96,38 @@ export const useChat = (roomId) => {
     ];
 
     return () => {
-      leaveRoomRef.current(currentRoomId);
+      leaveRoomRef.current(roomId);
       cleanups.forEach((cleanup) => cleanup && cleanup());
     };
-  }); // <-- no array: exhaustive-deps rule does not trigger
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, loadMessages]);
+  // ^ Intentionally omitting joinRoom, leaveRoom, onEvent, user._id —
+  //   they are kept current via refs above. Including them would cause
+  //   the effect to re-run on every render, repeatedly joining/leaving
+  //   the room and re-registering all socket listeners.
+
+  const sendMessage = useCallback((content) => {
+    socketSend(roomId, content);
+    handleStopTyping();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, socketSend]);
 
   const handleStopTyping = useCallback(() => {
     if (isTypingRef.current) {
       isTypingRef.current = false;
-      stopTyping(roomIdRef.current);
+      stopTyping(roomId);
     }
     clearTimeout(typingTimerRef.current);
-  }, [stopTyping]);
+  }, [roomId, stopTyping]);
 
   const handleStartTyping = useCallback(() => {
     if (!isTypingRef.current) {
       isTypingRef.current = true;
-      startTyping(roomIdRef.current);
+      startTyping(roomId);
     }
     clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(handleStopTyping, 2000);
-  }, [startTyping, handleStopTyping]);
-
-  const sendMessage = useCallback((content) => {
-    socketSend(roomIdRef.current, content);
-    handleStopTyping();
-  }, [socketSend, handleStopTyping]);
+  }, [roomId, startTyping, handleStopTyping]);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {

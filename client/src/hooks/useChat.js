@@ -5,14 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 export const useChat = (roomId) => {
   const { user } = useAuth();
-  const {
-    joinRoom,
-    leaveRoom,
-    sendMessage: socketSend,
-    startTyping,
-    stopTyping,
-    onEvent,
-  } = useSocket();
+  const { joinRoom, leaveRoom, sendMessage: socketSend, startTyping, stopTyping, onEvent } = useSocket();
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -24,22 +17,30 @@ export const useChat = (roomId) => {
   const typingTimerRef = useRef(null);
   const isTypingRef = useRef(false);
 
-  // ✅ Load messages
+  // Stable refs for socket functions and user — prevents effect from re-running
+  // when the socket context re-renders but roomId hasn't changed
+  const joinRoomRef = useRef(joinRoom);
+  const leaveRoomRef = useRef(leaveRoom);
+  const onEventRef = useRef(onEvent);
+  const userIdRef = useRef(user?._id);
+
+  useEffect(() => { joinRoomRef.current = joinRoom; }, [joinRoom]);
+  useEffect(() => { leaveRoomRef.current = leaveRoom; }, [leaveRoom]);
+  useEffect(() => { onEventRef.current = onEvent; }, [onEvent]);
+  useEffect(() => { userIdRef.current = user?._id; }, [user?._id]);
+
   const loadMessages = useCallback(async (pageNum = 1) => {
     if (!roomId) return;
-
     setLoading(true);
     try {
       const { data } = await axios.get(
         `/api/rooms/${roomId}/messages?page=${pageNum}&limit=30`
       );
-
       if (pageNum === 1) {
         setMessages(data.messages);
       } else {
         setMessages((prev) => [...data.messages, ...prev]);
       }
-
       setHasMore(data.hasMore);
     } catch (err) {
       console.error(err);
@@ -48,8 +49,6 @@ export const useChat = (roomId) => {
     }
   }, [roomId]);
 
-  // ✅ MAIN EFFECT (eslint disabled to avoid build failure)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!roomId) return;
 
@@ -58,66 +57,62 @@ export const useChat = (roomId) => {
     setHasMore(true);
     setTypingUsers([]);
 
-    joinRoom(roomId);
+    joinRoomRef.current(roomId);
     loadMessages(1);
 
     const cleanups = [
-      onEvent('message:new', (msg) => {
+      onEventRef.current('message:new', (msg) => {
         if (msg.room === roomId) {
           setMessages((prev) => [...prev, msg]);
         }
       }),
-
-      onEvent('typing:start', ({ roomId: rid, user: typingUser }) => {
-        if (rid === roomId && typingUser._id !== user?._id) {
+      onEventRef.current('typing:start', ({ roomId: rid, user: typingUser }) => {
+        if (rid === roomId && typingUser._id !== userIdRef.current) {
           setTypingUsers((prev) =>
-            prev.find((u) => u._id === typingUser._id)
-              ? prev
-              : [...prev, typingUser]
+            prev.find((u) => u._id === typingUser._id) ? prev : [...prev, typingUser]
           );
         }
       }),
-
-      onEvent('typing:stop', ({ roomId: rid, userId }) => {
+      onEventRef.current('typing:stop', ({ roomId: rid, userId }) => {
         if (rid === roomId) {
-          setTypingUsers((prev) =>
-            prev.filter((u) => u._id !== userId)
-          );
+          setTypingUsers((prev) => prev.filter((u) => u._id !== userId));
         }
       }),
-
-      onEvent('room:members', (memberList) => {
+      onEventRef.current('room:members', (memberList) => {
         setMembers(memberList);
       }),
-
-      onEvent('room:user_joined', ({ user: joinedUser }) => {
+      onEventRef.current('room:user_joined', ({ user: joinedUser }) => {
         setMembers((prev) =>
           prev.find((m) => m._id === joinedUser._id)
             ? prev
             : [...prev, joinedUser]
         );
       }),
-
-      onEvent('room:user_left', ({ userId }) => {
-        setMembers((prev) =>
-          prev.filter((m) => m._id !== userId)
-        );
+      onEventRef.current('room:user_left', ({ userId }) => {
+        setMembers((prev) => prev.filter((m) => m._id !== userId));
       }),
     ];
 
     return () => {
-      leaveRoom(roomId);
+      leaveRoomRef.current(roomId);
       cleanups.forEach((cleanup) => cleanup && cleanup());
     };
-  }, [roomId]);
+  }, [roomId, loadMessages]); // ✅ ESLint satisfied, no infinite loops
 
-  // ✅ Send message
   const sendMessage = useCallback((content) => {
     socketSend(roomId, content);
     handleStopTyping();
   }, [roomId, socketSend]);
 
-  // ✅ Typing handlers
+  const handleStartTyping = useCallback(() => {
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      startTyping(roomId);
+    }
+    clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(handleStopTyping, 2000);
+  }, [roomId, startTyping]);
+
   const handleStopTyping = useCallback(() => {
     if (isTypingRef.current) {
       isTypingRef.current = false;
@@ -126,17 +121,6 @@ export const useChat = (roomId) => {
     clearTimeout(typingTimerRef.current);
   }, [roomId, stopTyping]);
 
-  const handleStartTyping = useCallback(() => {
-    if (!isTypingRef.current) {
-      isTypingRef.current = true;
-      startTyping(roomId);
-    }
-
-    clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(handleStopTyping, 2000);
-  }, [roomId, startTyping, handleStopTyping]);
-
-  // ✅ Load more messages
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {
       const next = page + 1;

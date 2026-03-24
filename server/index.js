@@ -9,13 +9,14 @@ const socketHandler = require('./socket');
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'https://mern-chat-app-ten-psi.vercel.app',
-  'https://mern-chat-app-git-main-rishithsais-projects.vercel.app',
-  process.env.CLIENT_URL,
-].filter(Boolean);
+// ✅ Allow all vercel.app URLs dynamically
+const allowedOrigins = function(origin, callback) {
+  if (!origin) return callback(null, true);
+  if (origin.includes('localhost')) return callback(null, true);
+  if (origin.includes('vercel.app')) return callback(null, true);
+  if (origin === process.env.CLIENT_URL) return callback(null, true);
+  callback(new Error('Not allowed by CORS'));
+};
 
 const io = new Server(server, {
   cors: {
@@ -29,8 +30,6 @@ const io = new Server(server, {
 connectDB();
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
-
-// ✅ Fixed preflight handler
 app.options('/(.*)', cors({ origin: allowedOrigins, credentials: true }));
 
 app.use(express.json());
@@ -50,8 +49,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: err.message || 'Server Error' });
 });
 
-const PORT = process.env.PORT || 8000;
-server.listen(PORT, () => {
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🔌 Socket.io ready`);
 });

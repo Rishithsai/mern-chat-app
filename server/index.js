@@ -18,6 +18,13 @@ const allowedOrigins = function(origin, callback) {
   callback(new Error('Not allowed by CORS'));
 };
 
+const corsOptions = {
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -29,9 +36,8 @@ const io = new Server(server, {
 
 connectDB();
 
-app.use(cors({ origin: allowedOrigins, credentials: true }));
-app.options('/(.*)', cors({ origin: allowedOrigins, credentials: true }));
-
+// ✅ No app.options line needed
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

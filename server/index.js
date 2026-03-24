@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -9,9 +9,6 @@ const socketHandler = require('./socket');
 const app = express();
 const server = http.createServer(app);
 
-console.log("MONGO_URI:", process.env.MONGO_URI);
-
-// ✅ Allow all vercel.app URLs dynamically
 const allowedOrigins = function(origin, callback) {
   if (!origin) return callback(null, true);
   if (origin.includes('localhost')) return callback(null, true);
@@ -38,7 +35,6 @@ const io = new Server(server, {
 
 connectDB();
 
-// ✅ No app.options line needed
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

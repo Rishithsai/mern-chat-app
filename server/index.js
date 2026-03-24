@@ -30,8 +30,8 @@ connectDB();
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 
-// ✅ Handle preflight requests
-app.options('*', cors({ origin: allowedOrigins, credentials: true }));
+// ✅ Fixed preflight handler
+app.options('/(.*)', cors({ origin: allowedOrigins, credentials: true }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

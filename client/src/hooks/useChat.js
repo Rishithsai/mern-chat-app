@@ -17,8 +17,10 @@ export const useChat = (roomId) => {
   const typingTimerRef = useRef(null);
   const isTypingRef = useRef(false);
 
-  // Stable refs for socket functions and user — prevents effect from re-running
-  // when the socket context re-renders but roomId hasn't changed
+  // Keep latest socket functions and user in refs so the main effect
+  // can reference them without needing them in its dependency array.
+  // The effect must only re-run when roomId changes — adding these as
+  // deps would cause repeated join/leave/listener cycles on every render.
   const joinRoomRef = useRef(joinRoom);
   const leaveRoomRef = useRef(leaveRoom);
   const onEventRef = useRef(onEvent);
@@ -97,21 +99,18 @@ export const useChat = (roomId) => {
       leaveRoomRef.current(roomId);
       cleanups.forEach((cleanup) => cleanup && cleanup());
     };
-  }, [roomId, loadMessages]); // ✅ ESLint satisfied, no infinite loops
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, loadMessages]);
+  // ^ Intentionally omitting joinRoom, leaveRoom, onEvent, user._id —
+  //   they are kept current via refs above. Including them would cause
+  //   the effect to re-run on every render, repeatedly joining/leaving
+  //   the room and re-registering all socket listeners.
 
   const sendMessage = useCallback((content) => {
     socketSend(roomId, content);
     handleStopTyping();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, socketSend]);
-
-  const handleStartTyping = useCallback(() => {
-    if (!isTypingRef.current) {
-      isTypingRef.current = true;
-      startTyping(roomId);
-    }
-    clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(handleStopTyping, 2000);
-  }, [roomId, startTyping]);
 
   const handleStopTyping = useCallback(() => {
     if (isTypingRef.current) {
@@ -120,6 +119,15 @@ export const useChat = (roomId) => {
     }
     clearTimeout(typingTimerRef.current);
   }, [roomId, stopTyping]);
+
+  const handleStartTyping = useCallback(() => {
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      startTyping(roomId);
+    }
+    clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(handleStopTyping, 2000);
+  }, [roomId, startTyping, handleStopTyping]);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {

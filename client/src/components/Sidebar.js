@@ -5,7 +5,7 @@ import { useSocket } from '../context/SocketContext';
 
 const Sidebar = ({ activeRoom, onSelectRoom }) => {
   const { user, logout } = useAuth();
-  const { connected } = useSocket();
+  const { connected, onEvent } = useSocket();
   const [rooms, setRooms] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newRoom, setNewRoom] = useState({ name: '', description: '' });
@@ -24,8 +24,6 @@ const Sidebar = ({ activeRoom, onSelectRoom }) => {
     fetchRooms();
   }, []);
 
-  // Track unread counts for inactive rooms
-  const { onEvent } = useSocket();
   useEffect(() => {
     const cleanup = onEvent('message:new', (msg) => {
       if (msg.room !== activeRoom?._id) {
@@ -33,7 +31,8 @@ const Sidebar = ({ activeRoom, onSelectRoom }) => {
       }
     });
     return cleanup;
-  }, [activeRoom, onEvent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoom]);
 
   const handleSelectRoom = (room) => {
     setUnread((prev) => ({ ...prev, [room._id]: 0 }));
@@ -60,7 +59,6 @@ const Sidebar = ({ activeRoom, onSelectRoom }) => {
 
   return (
     <aside className="sidebar">
-      {/* Header */}
       <div className="sidebar-header">
         <div className="sidebar-logo">
           ⚡ <span>socket.live</span>
@@ -68,7 +66,6 @@ const Sidebar = ({ activeRoom, onSelectRoom }) => {
         <div className={`conn-dot ${connected ? 'online' : 'offline'}`} title={connected ? 'Connected' : 'Disconnected'} />
       </div>
 
-      {/* Me */}
       <div className="sidebar-me">
         <div className="avatar-sm" style={{ background: `${getColor(user.username)}20`, color: getColor(user.username) }}>
           {getInitials(user.username)}
@@ -80,7 +77,6 @@ const Sidebar = ({ activeRoom, onSelectRoom }) => {
         <button className="logout-btn" onClick={logout} title="Sign out">⏻</button>
       </div>
 
-      {/* Rooms */}
       <div className="sidebar-section-label">
         <span>Rooms</span>
         <button className="add-btn" onClick={() => setShowCreate(true)}>+</button>
